@@ -1,16 +1,44 @@
 #!/usr/bin/env python3
 # -*- coding: utf8 -*-
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN, ROUND_UP
 from numbers import Number
 
 
 class BaseTerm:
     def __repr__(self):
-        return '({}±{};{:.0%})'.format(
-            self.value,
-            self.error,
-            self.relerror)
+        return self.display(2)
+
+    def display(self, error_digits=1):
+        if self.error == 0:
+            return str(self.value)
+
+        error = self.error
+        value = self.value
+        exponent = 0
+        divisor = Decimal('10')
+        while error >= 1:
+            error /= divisor
+            value /= divisor
+            exponent += 1
+
+        quantifier = Decimal(1)
+        while error.quantize(quantifier, rounding=ROUND_DOWN) == 0:
+            quantifier /= 10
+
+        while error_digits > 1:
+            quantifier /= 10
+            error_digits -= 1
+
+        if exponent == 0:
+            return '({}±{})'.format(
+                str(value.quantize(quantifier)),
+                str(error.quantize(quantifier, rounding=ROUND_UP)))
+        else:
+            return '(({}±{})×10^{})'.format(
+                str(value.quantize(quantifier)),
+                str(error.quantize(quantifier, rounding=ROUND_UP)),
+                exponent)
 
     @property
     def value(self):
@@ -27,18 +55,33 @@ class BaseTerm:
     def __add__(self, other):
         return Sum(self, other)
 
+    def __radd__(self, other):
+        return Sum(other, self)
+
     def __sub__(self, other):
         return Difference(self, other)
+
+    def __rsub__(self, other):
+        return Difference(other, self)
 
     def __mul__(self, other):
         return Product(self, other)
 
-    def __div__(self, other):
+    def __rmul__(self, other):
+        return Product(other, self)
+
+    def __truediv__(self, other):
         return Quotient(self, other)
 
-    __truediv__ = __div__
+    def __rtruediv__(self, other):
+        return Quotient(other, self)
+
+    __div__ = __truediv__
 
     def __pow__(self, other):
+        return Power(self, other)
+
+    def __rpow__(other, self):
         return Power(self, other)
 
     def __lt__(self, other):
@@ -114,9 +157,34 @@ class Value(BaseTerm):
 
 class ErrorTerm(BaseTerm):
     def __init__(self, first, second):
-        assert isinstance(first, BaseTerm) and isinstance(second, BaseTerm)
+        if not isinstance(first, BaseTerm):
+            first = Value(first)
+        if not isinstance(second, BaseTerm):
+            second = Value(second)
+
         self._first = first
         self._second = second
+
+    def display(self, error_digits=1):
+        first = self._first.display(error_digits).splitlines()
+        second = self._second.display(error_digits).splitlines()
+        sel = super().display(error_digits)
+        res = []
+        while len(first) > 1 or len(second) > 1:
+            res.append('({}{}{})'.format(
+                first[0],
+                self.__class__.symbol,
+                second[0]))
+            if len(first) > 1:
+                first = first[1:]
+            if len(second) > 1:
+                second = second[1:]
+        res.append('({}{}{})'.format(
+            first[0],
+            self.__class__.symbol,
+            second[0]))
+        res.append(sel)
+        return '\n'.join(res)
 
 
 class AbsoluteErrorTerm(ErrorTerm):
@@ -173,12 +241,12 @@ class Power(RelativeErrorTerm):
     def __init__(self, first, second):
         assert isinstance(first, BaseTerm) and isinstance(second, Number)
         self._first = first
-        self._second = second
+        self._second = Value(second)
 
     @property
     def value(self):
-        return self._first.value**self._second
+        return self._first.value**self._second.value
 
     @property
     def relerror(self):
-        return self._first.relerror * abs(self._second)
+        return self._first.relerror * abs(self._second.value)
