@@ -8,8 +8,8 @@ from numbers import Number
 class BaseTerm:
     def __repr__(self):
         return '({}±{};{:.0%})'.format(
-            str(self.value),
-            str(self.error),
+            self.value,
+            self.error,
             self.relerror)
 
     @property
@@ -23,6 +23,58 @@ class BaseTerm:
     @property
     def relerror(self):
         return abs(self.error / self.value)
+
+    def __add__(self, other):
+        return Sum(self, other)
+
+    def __sub__(self, other):
+        return Difference(self, other)
+
+    def __mul__(self, other):
+        return Product(self, other)
+
+    def __div__(self, other):
+        return Quotient(self, other)
+
+    __truediv__ = __div__
+
+    def __pow__(self, other):
+        return Power(self, other)
+
+    def __lt__(self, other):
+        if isinstance(other, Number):
+            return self.value + self.error < other
+        elif isinstance(other, BaseTerm):
+            return self.value + self.error < other.value - other.error
+        else:
+            raise NotImplemented()
+
+    def __le__(self, other):
+        return self == other or self < other
+
+    def __eq__(self, other):
+        if isinstance(other, Number):
+            return self.value - self.error <= other <= self.value + self.error
+        elif isinstance(other, BaseTerm):
+            return \
+                self == other.value - other.error or \
+                self == other.value + other.error
+        else:
+            raise NotImplemented()
+
+    def __ne__(self, other):
+        return not self == other
+
+    def __gt__(self, other):
+        if isinstance(other, Number):
+            return self.value - self.error > other
+        elif isinstance(other, BaseTerm):
+            return self.value - self.error > other.value + other.error
+        else:
+            raise NotImplemented()
+
+    def __ge__(self, other):
+        return self == other or self > other
 
 
 class Value(BaseTerm):
@@ -57,24 +109,7 @@ class Value(BaseTerm):
 
     @relerror.setter
     def relerror(self, value):
-        self._error = abs(Decimal(str(value)) * self._value)
-
-    def __add__(self, other):
-        return Sum(self, other)
-
-    def __sub__(self, other):
-        return Difference(self, other)
-
-    def __mul__(self, other):
-        return Product(self, other)
-
-    def __div__(self, other):
-        return Quotient(self, other)
-
-    __truediv__ = __div__
-
-    def __pow__(self, other):
-        return Power(self, other)
+        self._error = abs(Decimal(str(value)) * self.value)
 
 
 class ErrorTerm(BaseTerm):
@@ -87,25 +122,29 @@ class ErrorTerm(BaseTerm):
 class AbsoluteErrorTerm(ErrorTerm):
     @property
     def error(self):
-        return self._first._error + self._second._error
+        return self._first.error + self._second.error
 
 
 class Sum(AbsoluteErrorTerm):
+    symbol = '+'
+
     @property
     def value(self):
-        return self._first._value + self._second._value
+        return self._first.value + self._second.value
 
 
 class Difference(AbsoluteErrorTerm):
+    symbol = '-'
+
     @property
     def value(self):
-        return self._first._value - self._second._value
+        return self._first.value - self._second.value
 
 
 class RelativeErrorTerm(ErrorTerm):
     @property
     def error(self):
-        return self.value * self.relerror
+        return abs(self.value * self.relerror)
 
     @property
     def relerror(self):
@@ -113,18 +152,24 @@ class RelativeErrorTerm(ErrorTerm):
 
 
 class Product(RelativeErrorTerm):
+    symbol = '·'
+
     @property
     def value(self):
-        return self._first._value * self._second._value
+        return self._first.value * self._second.value
 
 
 class Quotient(RelativeErrorTerm):
+    symbol = '÷'
+
     @property
     def value(self):
-        return self._first._value / self._second._value
+        return self._first.value / self._second.value
 
 
 class Power(RelativeErrorTerm):
+    symbol = '^'
+
     def __init__(self, first, second):
         assert isinstance(first, BaseTerm) and isinstance(second, Number)
         self._first = first
@@ -132,7 +177,7 @@ class Power(RelativeErrorTerm):
 
     @property
     def value(self):
-        return self._first._value**self._second
+        return self._first.value**self._second
 
     @property
     def relerror(self):
